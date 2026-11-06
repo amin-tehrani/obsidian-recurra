@@ -1,6 +1,6 @@
 {
   "name": "obsidian-recurra",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Goals timeline, task views with Google-Calendar-style recurrence, and one-way sync to Google Calendar and Microsoft To Do.",
   "main": "main.js",
   "private": true,

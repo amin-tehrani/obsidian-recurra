@@ -221,6 +221,7 @@ Phones and tablets never sync, because the sign-in flow needs a desktop.
 ## Limitations
 
 - Sync is one-way, and only the sync device sends changes to Google and Microsoft.
+- **Tick tasks in Obsidian.** If you complete a task in To Do (or in an app synced with it), the next sync makes it pending again, because Obsidian is the source of truth. Copies that To Do creates on its own are removed.
 - To Do keeps one task per series, holding the next pending occurrence and the repeat rule. It doesn't keep past skipped or moved days, which only Google Calendar shows.
 - Repeat rules are limited to what both services support. For example, "every 2nd and 4th Thursday" isn't possible.
 

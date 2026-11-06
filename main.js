@@ -576,6 +576,10 @@ function gMovedBodies(t, ctx) {
   return out;
 }
 
+/** To Do treats due dates as calendar dates at midnight UTC; local midnight (= the previous
+ *  day in UTC east of Greenwich) makes it shift repeating tasks to the next occurrence. */
+function todoDue(date) { return { dateTime: `${date}T00:00:00`, timeZone: 'UTC' }; }
+
 /** To Do holds one reminder: the first one listed, counted back from the start (all-day: from 00:00). */
 function todoReminder(t, date, time, tz) {
   if (!t.reminders.length) return { isReminderOn: false };
@@ -594,7 +598,7 @@ function todoBody(t, ctx) {
       dueDateTime: null,
     });
     if (t.when) {
-      b.dueDateTime = { dateTime: `${t.when.date}T00:00:00`, timeZone: ctx.tz };
+      b.dueDateTime = todoDue(t.when.date);
       if (t.status !== 'Done') Object.assign(b, todoReminder(t, t.when.date, t.when.time, ctx.tz));
     }
     return b;
@@ -604,7 +608,7 @@ function todoBody(t, ctx) {
   base.body.content = textDescription(t, ctx, next.original);
   const b = Object.assign(base, {
     status: 'notStarted',
-    dueDateTime: { dateTime: `${next.date}T00:00:00`, timeZone: ctx.tz },
+    dueDateTime: todoDue(next.date),
     recurrence: {
       pattern: toGraphPattern(t.rule, t.when.date),
       range: t.until
@@ -614,6 +618,16 @@ function todoBody(t, ctx) {
     isReminderOn: false,
   });
   return Object.assign(b, todoReminder(t, next.date, next.time, ctx.tz));
+}
+
+/** True if the To Do task no longer matches what we sent (missing, completed/reopened, or due date moved). */
+function todoDrifted(remote, body) {
+  if (!remote) return true;
+  if ((remote.status === 'completed') !== (body.status === 'completed')) return true;
+  // read without a time-zone preference, so Graph answers in UTC like we send
+  const want = body.dueDateTime ? body.dueDateTime.dateTime.slice(0, 16) : null;
+  const have = remote.dueDateTime && remote.dueDateTime.dateTime ? remote.dueDateTime.dateTime.slice(0, 16) : null;
+  return want !== have;
 }
 
 function hashOf(obj) {
@@ -1009,12 +1023,12 @@ class RecurraPlugin extends Plugin {
   }
 
   /** JSON API call with token refresh + one retry on 401/429/5xx. Returns {status, json}. */
-  async api(svc, method, url, body) {
+  async api(svc, method, url, body, headers) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const token = await this.accessToken(svc);
       const res = await requestUrl({
         url, method, throw: false,
-        headers: { Authorization: `Bearer ${token}` },
+        headers: Object.assign({ Authorization: `Bearer ${token}` }, headers || {}),
         contentType: 'application/json',
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
@@ -1155,29 +1169,52 @@ class RecurraPlugin extends Plugin {
     }
     this.tListChecked = true;
     const base = `${GRAPH}/me/todo/lists/${encodeURIComponent(st.tListId)}/tasks`;
+    const gone = new Set();
+    const remove = async (id) => {
+      gone.add(id);
+      const r = await this.api('ms', 'DELETE', `${base}/${encodeURIComponent(id)}`);
+      if (r.status >= 400 && r.status !== 404) throw new Error(`delete task → ${r.status}`);
+    };
+    // To Do mishandles edits to repeating tasks (it spawns copies and shifts the due date),
+    // so a task that changed is replaced, never edited in place.
     const ops = {
       create: async (b) => (await this.apiOk('ms', 'POST', base, stripNulls(b))).id,
-      update: async (id, b) => {
-        const r = await this.api('ms', 'PATCH', `${base}/${encodeURIComponent(id)}`, b);
-        if (r.status === 404) return false;
-        if (r.status >= 400) throw new Error(`update task → ${r.status} ${(r.json && r.json.error && r.json.error.message) || ''}`);
-        return true;
-      },
-      remove: async (id) => {
-        const r = await this.api('ms', 'DELETE', `${base}/${encodeURIComponent(id)}`);
-        if (r.status >= 400 && r.status !== 404) throw new Error(`delete task → ${r.status}`);
-      },
+      update: async (id) => { await remove(id); return false; },
+      remove,
     };
+    // What To Do actually holds: catches copies To Do made on its own
+    // and tasks that were completed or shifted there.
+    const remote = new Map();
+    for (let url = `${base}?$top=100`; url;) {
+      const page = await this.apiOk('ms', 'GET', url);
+      for (const x of (page && page.value) || []) remote.set(x.id, x);
+      url = page && page['@odata.nextLink'];
+    }
     const live = new Set();
+    const names = new Set();
     for (const t of tasks) {
       live.add(t.path);
       if (t.ruleError) continue; // reported by Google pass or views
+      names.add(t.name);
       const m = map[t.path] || (map[t.path] = {});
-      try { await this.reconcile(m, 't', todoBody(t, ctx), ops); } catch (e) { errors.push(`To Do · ${t.name}: ${e.message}`); }
+      try {
+        const body = todoBody(t, ctx);
+        if (m.t && todoDrifted(remote.get(m.t.id), body)) {
+          if (remote.has(m.t.id)) m.t.h = 'drifted'; else delete m.t;
+        }
+        await this.reconcile(m, 't', body, ops);
+      } catch (e) { errors.push(`To Do · ${t.name}: ${e.message}`); }
     }
     for (const [p, m] of Object.entries(map)) {
       if (live.has(p)) continue;
+      if (m.t) names.add(p.split('/').pop().replace(/\.md$/, ''));
       try { await this.reconcile(m, 't', null, ops); } catch (e) { errors.push(`To Do · ${p}: ${e.message}`); }
+    }
+    // remove copies To Do created itself (same title as one of ours, not mapped)
+    const mine = new Set(Object.values(map).map((m) => m.t && m.t.id).filter(Boolean));
+    for (const [id, x] of remote) {
+      if (mine.has(id) || gone.has(id) || !names.has(x.title)) continue;
+      try { await remove(id); } catch (e) { errors.push(`To Do · ${x.title}: ${e.message}`); }
     }
   }
 
