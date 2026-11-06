@@ -70,3 +70,15 @@ test('first desktop with no sync device recorded is allowed to sync', async () =
   const p = new P(); await p.onload();
   assert.equal(p.isSyncDevice(), true);
 });
+
+test('device id moves from window.localStorage into the vault-specific store', async () => {
+  const { P, disk } = harness({ isDesktopApp: true, isMobile: false }, 'mac');
+  disk.data = base();
+  const store = {};
+  const p = new P();
+  p.app.loadLocalStorage = (k) => store[k] || null;
+  p.app.saveLocalStorage = (k, v) => { store[k] = v; };
+  await p.onload();
+  assert.equal(p.isSyncDevice(), true); // legacy id "mac" was carried over
+  assert.equal(store['taskline-device-id'], 'mac');
+});

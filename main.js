@@ -23,7 +23,8 @@
  */
 
 const obsidian = require('obsidian');
-const { Plugin, PluginSettingTab, Setting, Modal, Notice, requestUrl, MarkdownRenderChild } = obsidian;
+const { Plugin, PluginSettingTab, Setting, Modal, Notice, requestUrl, MarkdownRenderChild, TFolder } = obsidian;
+const normalizePath = obsidian.normalizePath || ((p) => p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/|\/$/g, ''));
 // Syncing needs a desktop (OAuth loopback + Node). Vaults are often shared between devices
 // (Obsidian Sync, iCloud, Syncthing, git), including this plugin's data.json, so exactly one
 // desktop — the "sync device" — talks to Google/Microsoft; every other device only shows and edits tasks.
@@ -31,10 +32,18 @@ const IS_MOBILE = !!(obsidian.Platform && !obsidian.Platform.isDesktopApp);
 const LOCAL_SETTING_KEYS = ['tasksFolder', 'goalsFolder', 'defaultDuration', 'defaultReminder',
   'statusTodo', 'statusDoing', 'statusDone', 'goalStartProp', 'goalEndProp', 'goalParentProp'];
 const DEVICE_KEY = 'taskline-device-id';
-function deviceId() {
+/** Random id of this device for this vault (kept in Obsidian's local storage, which is never synced). */
+function deviceId(app) {
   try {
-    let id = window.localStorage.getItem(DEVICE_KEY);
-    if (!id) { id = Math.random().toString(36).slice(2) + Date.now().toString(36); window.localStorage.setItem(DEVICE_KEY, id); }
+    const get = (k) => (app && app.loadLocalStorage ? app.loadLocalStorage(k) : window.localStorage.getItem(k));
+    const set = (k, v) => (app && app.saveLocalStorage ? app.saveLocalStorage(k, v) : window.localStorage.setItem(k, v));
+    let id = get(DEVICE_KEY);
+    if (!id) {
+      let legacy = null; // ids from 1.0–1.1 were kept in window.localStorage
+      try { legacy = window.localStorage.getItem(DEVICE_KEY); } catch (e) { /* none */ }
+      id = legacy || Math.random().toString(36).slice(2) + Date.now().toString(36);
+      set(DEVICE_KEY, id);
+    }
     return id;
   } catch (e) { return 'unknown'; }
 }
@@ -760,7 +769,7 @@ class TasklinePlugin extends Plugin {
   refreshViews() { for (const v of this.views) v.queue(); }
 
   /** True if this device is (or may become) the one that syncs. */
-  isSyncDevice() { return !IS_MOBILE && (!this.settings.syncDevice || this.settings.syncDevice === deviceId()); }
+  isSyncDevice() { return !IS_MOBILE && (!this.settings.syncDevice || this.settings.syncDevice === deviceId(this.app)); }
 
   /** Make this desktop the sync device, starting from what is on disk (another device may have newer state). */
   async takeOverSync() {
@@ -768,7 +777,7 @@ class TasklinePlugin extends Plugin {
     const local = {};
     for (const k of LOCAL_SETTING_KEYS) local[k] = this.settings[k];
     this.data = {
-      settings: Object.assign({}, DEFAULT_SETTINGS, data.settings || {}, local, { syncDevice: deviceId() }),
+      settings: Object.assign({}, DEFAULT_SETTINGS, data.settings || {}, local, { syncDevice: deviceId(this.app) }),
       tokens: data.tokens || {},
       state: Object.assign({ map: {} }, data.state || {}),
     };
@@ -786,8 +795,8 @@ class TasklinePlugin extends Plugin {
     await this.saveData(fresh);
   }
 
-  isTaskPath(p) { return p.startsWith(this.settings.tasksFolder.replace(/\/$/, '') + '/') && p.endsWith('.md'); }
-  isGoalPath(p) { return p.startsWith(this.settings.goalsFolder.replace(/\/$/, '') + '/') && p.endsWith('.md'); }
+  isTaskPath(p) { return p.startsWith(normalizePath(this.settings.tasksFolder) + '/') && p.endsWith('.md'); }
+  isGoalPath(p) { return p.startsWith(normalizePath(this.settings.goalsFolder) + '/') && p.endsWith('.md'); }
 
   getTasks() {
     return this.app.vault.getMarkdownFiles()
@@ -838,7 +847,7 @@ class TasklinePlugin extends Plugin {
     return this._pages;
   }
 
-  occurrenceFolder(t) { const dir = t.file.parent ? t.file.parent.path : ''; return (dir && dir !== '/' ? dir + '/' : '') + t.name; }
+  occurrenceFolder(t) { const dir = t.file.parent ? t.file.parent.path : ''; return normalizePath((dir && dir !== '/' ? dir + '/' : '') + t.name); }
 
   /** Open the page for one occurrence (original date) of a series, creating it if needed. */
   async openOccurrencePage(t, original, newLeaf) {
@@ -846,8 +855,8 @@ class TasklinePlugin extends Plugin {
     if (existing) { await this.app.workspace.getLeaf(!!newLeaf).openFile(existing); return; }
     const folder = this.occurrenceFolder(t);
     if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
-    let path = `${folder}/${t.name} ${original}.md`;
-    for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${t.name} ${original} ${i}.md`;
+    let path = normalizePath(`${folder}/${t.name} ${original}.md`);
+    for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = normalizePath(`${folder}/${t.name} ${original} ${i}.md`);
     const content = ['---', 'type: occurrence', `series: ${JSON.stringify(`[[${t.name}]]`)}`, `date: ${original}`, '---', '', OCC_PAGE_BLOCK, '', ''].join('\n');
     const file = await this.app.vault.create(path, content);
     await this.app.workspace.getLeaf(!!newLeaf).openFile(file);
@@ -857,8 +866,8 @@ class TasklinePlugin extends Plugin {
     if (!file.path.endsWith('.md') || !this.isTaskPath(file.path)) return;
     const strip = (p) => p.replace(/\.md$/, '');
     const oldFolder = this.app.vault.getAbstractFileByPath(strip(oldPath));
-    const newFolderPath = strip(file.path);
-    if (!oldFolder || oldFolder.children === undefined || this.app.vault.getAbstractFileByPath(newFolderPath)) return;
+    const newFolderPath = normalizePath(strip(file.path));
+    if (!(oldFolder instanceof TFolder) || this.app.vault.getAbstractFileByPath(newFolderPath)) return;
     try { await this.app.fileManager.renameFile(oldFolder, newFolderPath); } catch (e) { console.warn('[taskline] could not move occurrence folder', e); }
   }
 
@@ -935,7 +944,7 @@ class TasklinePlugin extends Plugin {
       if (manual) new Notice('Taskline: connect Google Calendar or Microsoft To Do in the plugin settings first.');
       return;
     }
-    if (!this.settings.syncDevice) this.settings.syncDevice = deviceId();
+    if (!this.settings.syncDevice) this.settings.syncDevice = deviceId(this.app);
     if (this.syncing) { this.syncAgain = true; return; }
     this.syncing = true;
     this.updateStatus('⟳ Syncing tasks…');
@@ -1444,7 +1453,7 @@ function renderToday(el, plugin, state, rerender) {
   if (total) {
     const done = occs.filter((o) => !o.skipped && o.status === 'Done').length;
     const bar = root.createDiv({ cls: 'tm-progress', attr: { title: `${done}/${total} done` } });
-    bar.createDiv({ cls: 'tm-progress-fill', attr: { style: `width:${Math.round((done / total) * 100)}%` } });
+    bar.createDiv({ cls: 'tm-progress-fill' }).setCssProps({ '--tm-width': `${Math.round((done / total) * 100)}%` });
   }
 }
 
@@ -1577,19 +1586,19 @@ function renderTimeline(el, plugin) {
     headTrack.createDiv({
       cls: 'tm-tl-month',
       text: m.toLocaleDateString(undefined, showYear || months.length < 8 ? { month: 'short', year: '2-digit' } : { month: 'short' }),
-      attr: { style: `left:${left}%;width:${right - left}%` },
-    });
+    }).setCssProps({ '--tm-left': `${left}%`, '--tm-width': `${right - left}%` });
   }
   const todayPct = today >= ymd(rangeStart) && today < ymd(rangeEnd) ? pct(today) : null;
 
   for (const g of ordered) {
     const row = grid.createDiv({ cls: 'tm-tl-row' });
-    const label = row.createDiv({ cls: 'tm-tl-label tm-clickable' + (g.depth ? ' is-child' : ''), attr: { style: `padding-left:${8 + g.depth * 16}px`, title: g.desc || g.name } });
+    const label = row.createDiv({ cls: 'tm-tl-label tm-clickable' + (g.depth ? ' is-child' : ''), attr: { title: g.desc || g.name } });
+    label.setCssProps({ '--tm-depth': String(g.depth) });
     label.setText((g.depth ? '↳ ' : '') + g.name + (g.warn ? ' ⚠' : ''));
     label.onclick = (e) => plugin.openNote(g.path, e.metaKey || e.ctrlKey);
     const track = row.createDiv({ cls: 'tm-tl-track' });
-    for (const m of months) track.createDiv({ cls: 'tm-tl-gridline', attr: { style: `left:${pct(m)}%` } });
-    if (todayPct != null) track.createDiv({ cls: 'tm-tl-today', attr: { style: `left:${todayPct}%`, title: `Today ${today}` } });
+    for (const m of months) track.createDiv({ cls: 'tm-tl-gridline' }).setCssProps({ '--tm-left': `${pct(m)}%` });
+    if (todayPct != null) track.createDiv({ cls: 'tm-tl-today', attr: { title: `Today ${today}` } }).setCssProps({ '--tm-left': `${todayPct}%` });
     if (!g.start) { track.createDiv({ cls: 'tm-tl-nodate', text: 'no dates set' }); continue; }
     const left = pct(g.start);
     const width = Math.max(pct(ymd(addDays(parseYmd(g.end), 1))) - left, 0.8);
@@ -1597,10 +1606,10 @@ function renderTimeline(el, plugin) {
     const bar = track.createDiv({
       cls: 'tm-tl-bar tm-clickable' + (g.end < today ? ' is-past' : ''),
       attr: {
-        style: `left:${left}%;width:${width}%;background:hsl(${g.hue} 60% ${light}%)`,
         title: `${g.name}\n${g.start} → ${g.end}${g.desc ? '\n' + g.desc : ''}${g.warn ? '\n⚠ ' + g.warn : ''}`,
       },
     });
+    bar.setCssProps({ '--tm-left': `${left}%`, '--tm-width': `${width}%`, '--tm-hue': String(g.hue), '--tm-light': `${light}%` });
     bar.createSpan({ text: g.name });
     bar.onclick = (e) => plugin.openNote(g.path, e.metaKey || e.ctrlKey);
   }
@@ -1683,10 +1692,10 @@ class NewTaskModal extends Modal {
     lines.push('---', '');
     if (this.withOccurrenceList) lines.push(OCC_LIST_BLOCK, '');
     lines.push('');
-    const folder = this.plugin.settings.tasksFolder.replace(/\/$/, '');
+    const folder = normalizePath(this.plugin.settings.tasksFolder);
     if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
-    let path = `${folder}/${name}.md`;
-    for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${name} ${i}.md`;
+    let path = normalizePath(`${folder}/${name}.md`);
+    for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = normalizePath(`${folder}/${name} ${i}.md`);
     const file = await this.app.vault.create(path, lines.join('\n'));
     this.close();
     await this.app.workspace.getLeaf(false).openFile(file);

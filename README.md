@@ -211,6 +211,13 @@ Phones and tablets never sync, because the sign-in flow needs a desktop.
 - Network requests go only to `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`, `login.microsoftonline.com` and `graph.microsoft.com`. The forwarding page for links is a static page: opening it sends nothing about your task, because the link is after the `#`.
 - Sign-in uses OAuth with PKCE and a temporary server on 127.0.0.1/localhost that exists only while you sign in.
 
+## Disclosures
+
+- **Accounts:** syncing needs a Google account and/or a Microsoft account. You set up your own free OAuth app for each; see *Setting up sync*. Without them, the views, recurring tasks and occurrence pages all work offline.
+- **Network use:** only when sync is connected, and only to Google's and Microsoft's sign-in and API servers listed above. Links in synced events point to a static forwarding page on GitHub Pages; you can turn that off in settings.
+- **No telemetry, no ads, no payments.** Nothing is sent to the author.
+- **Files:** Taskline reads and writes notes only in the tasks and goals folders you configure, and in the occurrence-page folders it creates there.
+
 ## Limitations
 
 - Sync is one-way, and only the sync device sends changes to Google and Microsoft.
