@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Open in Obsidian</title>
+<style>
+  :root { color-scheme: light dark; --accent: #7c3aed; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 26rem; padding: 2rem 1.5rem; text-align: center; }
+  h1 { font-size: 1.3rem; margin: 0 0 .5rem; }
+  .btn { display: inline-block; margin: 1rem 0; padding: .8rem 1.6rem; border-radius: .6rem; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+  .muted { opacity: .65; font-size: .85rem; }
+  #what { word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Opening Obsidian…</h1>
+  <p id="what" class="muted"></p>
+  <a id="btn" class="btn" href="#" hidden>Open in Obsidian</a>
+  <p class="muted">This page only passes the link in its address to the Obsidian app on this device.
+  The link is the part after "#", which browsers never send to any server.
+  Made for <a href="https://github.com/amin-tehrani/obsidian-taskline">Taskline</a>.</p>
+</main>
+<script>
+(function () {
+  var target = '';
+  try { target = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* malformed */ }
+  // Only Taskline / plain "open" links are forwarded.
+  var ok = /^obsidian:\/\/(taskline|open)\?[^\s<>"]*$/.test(target);
+  var title = document.getElementById('title');
+  var btn = document.getElementById('btn');
+  if (!ok) { title.textContent = 'Not an Obsidian link'; return; }
+  var q = new URLSearchParams(target.split('?')[1]);
+  var what = (q.get('task') || q.get('file') || '').split('/').pop().replace(/\.md$/, '');
+  if (what) document.getElementById('what').textContent = what + (q.get('date') ? ' · ' + q.get('date') : '');
+  var href = /Android/i.test(navigator.userAgent)
+    ? 'intent://' + target.slice('obsidian://'.length) + '#Intent;scheme=obsidian;package=md.obsidian;end'
+    : target;
+  btn.href = href;
+  btn.hidden = false;
+  window.location.href = href; // some browsers need the tap on the button instead
+  setTimeout(function () { title.textContent = 'Tap to open in Obsidian'; }, 1200);
+})();
+</script>
+</body>
+</html>

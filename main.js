@@ -61,7 +61,11 @@ const DEFAULT_SETTINGS = {
   msTenant: 'common',
   msListName: 'Obsidian',
   syncDevice: '', // id of the one desktop that syncs (set on first sync / connect)
+  linkStyle: 'web', // links in synced events/tasks: 'web' (https page that opens the app; works on phones) | 'obsidian' | 'none'
+  linkBase: 'https://amin-tehrani.github.io/obsidian-taskline/open/',
+  linkVault: false, // put the vault name in links (off: the open vault is used, which survives different vault names per device)
 };
+const INSTANCE_WINDOW = { before: 3, after: 14 }; // days around today whose Google instances get a per-day link
 
 /** Map a status value to 'Not started' | 'In progress' | 'Done' (canonical, used internally). */
 function normStatus(v, s) {
@@ -468,13 +472,44 @@ function toGraphPattern(rule, seriesStart) {
   return null;
 }
 
-function syncDescription(t, ctx) {
+/** obsidian://taskline?task=<path>[&date=<original date>] — handled by this plugin on every device. */
+function obsidianUri(ctx, path, date) {
+  const q = [];
+  if (ctx.vault) q.push(`vault=${encodeURIComponent(ctx.vault)}`);
+  q.push(`task=${encodeURIComponent(path)}`);
+  if (date) q.push(`date=${date}`);
+  return `obsidian://taskline?${q.join('&')}`;
+}
+/** The link put into Google/To Do, or null. */
+function openLink(ctx, path, date) {
+  if (ctx.linkStyle === 'none') return null;
+  const uri = obsidianUri(ctx, path, date);
+  if (ctx.linkStyle === 'obsidian' || !ctx.linkBase) return uri;
+  return `${ctx.linkBase}#${encodeURIComponent(uri)}`;
+}
+function descLines(t, extra) {
   const lines = [];
+  if (extra) lines.push(extra);
   if (t.goal) lines.push(`Goal: ${t.goal}`);
   if (t.recurring) lines.push(`Repeats: ${describeRule(t.rule)}`);
-  lines.push(`Open in Obsidian: obsidian://open?vault=${encodeURIComponent(ctx.vault)}&file=${encodeURIComponent(t.path)}`);
+  return lines;
+}
+const escHtml = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/** Google event description (HTML: Google Calendar on web and phones renders links). date = occurrence (original date). */
+function gDescription(t, ctx, date, extra) {
+  const lines = descLines(t, extra).map(escHtml);
+  const url = openLink(ctx, t.path, date);
+  if (url) lines.push(`<a href="${escHtml(url)}">${date ? `📝 Open ${escHtml(fmtShort(date))} in Obsidian` : '📝 Open in Obsidian'}</a>`);
+  return lines.join('<br>');
+}
+/** Plain-text description (To Do notes; clients linkify the URL). */
+function textDescription(t, ctx, date) {
+  const lines = descLines(t);
+  const url = openLink(ctx, t.path, date);
+  if (url) lines.push(`${date ? `Open ${fmtShort(date)} in Obsidian` : 'Open in Obsidian'}: ${url}`);
   return lines.join('\n');
 }
+function fmtShort(d) { return parseYmd(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
 
 function gReminders(t, off) {
   return { useDefault: false, overrides: off ? [] : t.reminders.map((minutes) => ({ method: 'popup', minutes })) };
@@ -492,7 +527,7 @@ function gTimes(date, time, duration, tz) {
 /** Google event for the task (single event, or the recurring series). null = no event. */
 function gSeriesBody(t, ctx) {
   if (!t.when) return null;
-  const description = syncDescription(t, ctx);
+  const description = gDescription(t, ctx, null);
   if (!t.recurring) {
     return Object.assign({ summary: (t.status === 'Done' ? '✓ ' : '') + t.name, description, status: 'confirmed', reminders: gReminders(t, t.status === 'Done') },
       gTimes(t.when.date, t.when.time, t.duration, ctx.tz));
@@ -522,7 +557,7 @@ function gMovedBodies(t, ctx) {
     if (t.skipped.has(o)) continue;
     out[o] = Object.assign({
       summary: t.name,
-      description: `Moved from ${o}\n${syncDescription(t, ctx)}`,
+      description: gDescription(t, ctx, o, `Moved from ${fmtShort(o)}`),
       status: 'confirmed',
       reminders: gReminders(t, t.done.has(o)),
     }, gTimes(w.date, w.time || t.when.time, t.duration, ctx.tz));
@@ -539,7 +574,7 @@ function todoReminder(t, date, time, tz) {
 
 /** Microsoft To Do task body. */
 function todoBody(t, ctx) {
-  const base = { title: t.name, body: { content: syncDescription(t, ctx), contentType: 'text' } };
+  const base = { title: t.name, body: { content: textDescription(t, ctx, null), contentType: 'text' } };
   if (!t.recurring) {
     const b = Object.assign(base, {
       status: t.status === 'Done' ? 'completed' : t.status === 'In progress' ? 'inProgress' : 'notStarted',
@@ -555,6 +590,7 @@ function todoBody(t, ctx) {
   }
   const next = nextPending(t, ctx.today);
   if (!next) return Object.assign(base, { status: 'completed', recurrence: null, isReminderOn: false });
+  base.body.content = textDescription(t, ctx, next.original);
   const b = Object.assign(base, {
     status: 'notStarted',
     dueDateTime: { dateTime: `${next.date}T00:00:00`, timeZone: ctx.tz },
@@ -690,6 +726,7 @@ class TasklinePlugin extends Plugin {
     this.addCommand({ id: 'new-task', name: 'New task', callback: () => new NewTaskModal(this).open() });
     this.addRibbonIcon('list-plus', 'New task', () => new NewTaskModal(this).open());
     this.addSettingTab(new TMSettingTab(this.app, this));
+    this.registerObsidianProtocolHandler('taskline', (params) => this.openFromLink(params));
     const dropPages = () => { this._pages = null; };
     this.registerEvent(this.app.metadataCache.on('changed', dropPages));
     this.registerEvent(this.app.vault.on('delete', dropPages));
@@ -776,6 +813,24 @@ class TasklinePlugin extends Plugin {
       out.get(series.path).set(date, f);
     }
     return out;
+  }
+
+  /** obsidian://taskline?task=<path>[&date=YYYY-MM-DD]: open the task, or that day's page (created if needed). */
+  async openFromLink(params) {
+    if (!this.app.metadataCache.resolved) {
+      await new Promise((resolve) => {
+        const ref = this.app.metadataCache.on('resolved', () => { this.app.metadataCache.offref(ref); resolve(); });
+        setTimeout(resolve, 5000);
+      });
+    }
+    const path = toStr(params.task);
+    const tasks = this.getTasks();
+    const base = path.split('/').pop().replace(/\.md$/, '');
+    const t = tasks.find((x) => x.path === path) || tasks.find((x) => x.name === base);
+    if (!t) { new Notice(`Taskline: task not found: ${path}`); return; }
+    const date = normDate(params.date);
+    if (date && t.recurring) await this.openOccurrencePage(t, date);
+    else this.openNote(t.path);
   }
 
   occurrencePagesCached() {
@@ -887,7 +942,11 @@ class TasklinePlugin extends Plugin {
     const errors = [];
     try {
       const tasks = this.getTasks();
-      const ctx = { tz: Intl.DateTimeFormat().resolvedOptions().timeZone, today: todayYmd(), vault: this.app.vault.getName() };
+      const s = this.settings;
+      const ctx = {
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone, today: todayYmd(),
+        vault: s.linkVault ? this.app.vault.getName() : '', linkStyle: s.linkStyle, linkBase: s.linkBase,
+      };
       if (this.googleReady()) await this.syncGoogle(tasks, ctx, errors).catch((e) => errors.push(`Google: ${e.message}`));
       if (this.msReady()) await this.syncTodo(tasks, ctx, errors).catch((e) => errors.push(`To Do: ${e.message}`));
       // drop mappings for deleted tasks once nothing remains on either side
@@ -1015,7 +1074,16 @@ class TasklinePlugin extends Plugin {
       if (t.ruleError) { errors.push(`${t.name}: ${t.ruleError}`); continue; }
       const m = map[t.path] || (map[t.path] = {});
       try {
-        await this.reconcile(m, 'g', gSeriesBody(t, ctx), ops);
+        const sb = gSeriesBody(t, ctx);
+        // A series whose days carry their own links is recreated when it changes,
+        // so no per-day edit with an outdated time or date can survive.
+        if (m.g && sb && m.gi && m.gi.id === m.g.id && Object.keys(m.gi.d).length && m.g.h !== hashOf(sb)) {
+          await ops.remove(m.g.id);
+          delete m.g;
+        }
+        await this.reconcile(m, 'g', sb, ops);
+        if (!m.g || !m.gi || m.gi.id !== m.g.id) m.gi = m.g ? { id: m.g.id, d: {} } : undefined;
+        if (m.g && t.recurring && ctx.linkStyle !== 'none') await this.linkInstances(t, m, ctx, base);
         m.gm = m.gm || {};
         const want = gMovedBodies(t, ctx);
         for (const [o, b] of Object.entries(want)) await this.reconcile(m.gm, o, b, ops);
@@ -1028,6 +1096,36 @@ class TasklinePlugin extends Plugin {
         await this.reconcile(m, 'g', null, ops);
         for (const o of Object.keys(m.gm || {})) await this.reconcile(m.gm, o, null, ops);
       } catch (e) { errors.push(`Google · ${p}: ${e.message}`); }
+    }
+  }
+
+  /** Give each day of a recurring Google event (around today) a description linking to that day's page. */
+  async linkInstances(t, m, ctx, base) {
+    const from = ymd(addDays(parseYmd(ctx.today), -INSTANCE_WINDOW.before));
+    const to = ymd(addDays(parseYmd(ctx.today), INSTANCE_WINDOW.after));
+    const gi = m.gi;
+    for (const d of Object.keys(gi.d)) if (d < from) delete gi.d[d];
+    const want = {};
+    for (const d of seriesDates(t, from, to)) {
+      if (t.skipped.has(d) || t.moved[d]) continue;
+      want[d] = { description: gDescription(t, ctx, d) };
+    }
+    const todo = Object.keys(want).filter((d) => gi.d[d] !== hashOf(want[d]));
+    if (!todo.length) return;
+    const tmin = addDays(parseYmd(todo[0]), -1).toISOString();
+    const tmax = addDays(parseYmd(todo[todo.length - 1]), 2).toISOString();
+    const res = await this.apiOk('google', 'GET', `${base}/${encodeURIComponent(m.g.id)}/instances?maxResults=250&timeMin=${encodeURIComponent(tmin)}&timeMax=${encodeURIComponent(tmax)}`);
+    const byDate = {};
+    for (const ev of (res && res.items) || []) {
+      const os = ev.originalStartTime || ev.start || {};
+      const d = os.date || (os.dateTime ? ymd(new Date(os.dateTime)) : null);
+      if (d) byDate[d] = ev.id;
+    }
+    for (const d of todo) {
+      if (!byDate[d]) continue;
+      const r = await this.api('google', 'PATCH', `${base}/${encodeURIComponent(byDate[d])}`, want[d]);
+      if (r.status >= 400 && r.status !== 404 && r.status !== 410) throw new Error(`link ${d} → ${r.status}`);
+      if (r.status < 400) gi.d[d] = hashOf(want[d]);
     }
   }
 
@@ -1673,6 +1771,20 @@ class TMSettingTab extends PluginSettingTab {
       }))
       .addButton((b) => b.setButtonText('Disconnect').setDisabled(!connected).onClick(async () => { await disconnectFn(); this.display(); p.updateStatus(); }));
 
+    new Setting(containerEl).setName('Links back to Obsidian').setHeading()
+      .setDesc('Events and To Do tasks get a link that opens the task — for recurring tasks, the page of that exact day (created on first open).');
+    new Setting(containerEl).setName('Link type')
+      .setDesc('"Web" links work everywhere, including the Google Calendar and To Do phone apps: a small page forwards them to the Obsidian app. "obsidian://" links are only clickable in some desktop apps.')
+      .addDropdown((d) => d.addOptions({ web: 'Web (works on phones)', obsidian: 'obsidian:// (direct)', none: 'No links' })
+        .setValue(s.linkStyle).onChange(async (x) => { s.linkStyle = x; await save(); this.display(); }));
+    if (s.linkStyle === 'web') {
+      new Setting(containerEl).setName('Forwarding page').setDesc('Only the part after "#" carries your link, and browsers never send that to the server. You can host your own copy of docs/open/index.html.')
+        .addText((t) => t.setValue(s.linkBase).onChange(async (x) => { s.linkBase = x.trim() || DEFAULT_SETTINGS.linkBase; await save(); }));
+    }
+    new Setting(containerEl).setName('Include vault name in links')
+      .setDesc('Off: links open in the vault that is open, which works even if the vault has a different name on your phone. Turn on if you switch between several vaults.')
+      .addToggle((t) => t.setValue(s.linkVault).onChange(async (x) => { s.linkVault = x; await save(); }));
+
     new Setting(containerEl).setName('Google Calendar').setHeading();
     new Setting(containerEl).setName('Enabled').addToggle((t) => t.setValue(s.googleEnabled).onChange(async (x) => { s.googleEnabled = x; await save(); p.updateStatus(); }));
     new Setting(containerEl).setName('OAuth client ID').addText((t) => t.setValue(s.googleClientId).onChange(async (x) => { s.googleClientId = x.trim(); await save(); }));
@@ -1696,4 +1808,5 @@ module.exports.default = TasklinePlugin;
 module.exports._lib = {
   parseRule, describeRule, matches, readTask, occurrencesBetween, nextPending, firstOccurrence,
   toRRule, toGraphPattern, gSeriesBody, gMovedBodies, todoBody, parseWhen, parseDuration, parseMoved, parseReminder, describeReminder, normStatus, statusLabel, seriesDates, occurrenceOn,
+  obsidianUri, openLink, gDescription, textDescription, INSTANCE_WINDOW,
 };

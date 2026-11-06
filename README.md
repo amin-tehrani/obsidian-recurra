@@ -177,6 +177,24 @@ Taskline asks only for `calendar.app.created`. This scope lets it create its own
 
 Taskline asks for `Tasks.ReadWrite` and creates its own list ("Obsidian").
 
+### Links back to Obsidian (desktop and phone)
+
+Every synced event and To Do task has a **📝 Open in Obsidian** link:
+
+- **One-off task:** the link opens the task's note.
+- **Recurring task in Google Calendar:** each day from 3 days ago to 2 weeks ahead links to **that exact day's page**. The page is created the first time you open it. As days go by, new ones get their link. Days further out link to the task note.
+- **Moved day:** the link opens the page for that day.
+- **To Do:** the link opens the page for the next pending day.
+
+The links run a Taskline action (`obsidian://taskline?task=…&date=…`). Taskline is installed on all your devices, so the same link works on a computer and on a phone.
+
+Phone calendar and To Do apps don't open `obsidian://` links, so by default each link goes through a [small forwarding page](docs/open/index.html) hosted on GitHub Pages. The page hands the link to the Obsidian app; on Android it uses an app link. Your link is the part after `#`, which browsers never send to any server.
+
+Under **Settings → Taskline → Links back to Obsidian** you can:
+- switch to direct `obsidian://` links, or turn links off;
+- host your own copy of the forwarding page;
+- include the vault name in links. By default it's left out, so links open in whichever vault is open. That still works if the vault has a different name on your phone.
+
 ### Multiple devices
 
 Vaults are often shared between devices through Obsidian Sync, iCloud, Syncthing or git, and the plugin's `data.json` is shared with them. If two devices both synced, every event would be created twice. So **only one desktop syncs**:
@@ -190,7 +208,7 @@ Phones and tablets never sync, because the sign-in flow needs a desktop.
 ### Privacy and security
 
 - Sign-in tokens and the client secret are stored in the plugin's `data.json` inside your vault. **If you put your vault in a public git repository, add `.obsidian/plugins/taskline/data.json` to `.gitignore`.**
-- Network requests go only to `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`, `login.microsoftonline.com` and `graph.microsoft.com`.
+- Network requests go only to `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`, `login.microsoftonline.com` and `graph.microsoft.com`. The forwarding page for links is a static page: opening it sends nothing about your task, because the link is after the `#`.
 - Sign-in uses OAuth with PKCE and a temporary server on 127.0.0.1/localhost that exists only while you sign in.
 
 ## Limitations

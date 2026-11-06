@@ -24,6 +24,7 @@ function harness(platform, localId) {
     registerMarkdownCodeBlockProcessor(n) { calls.push('block:' + n); }
     registerEvent() {}
     registerInterval() {}
+    registerObsidianProtocolHandler(a) { calls.push("uri:" + a); }
   }
   const P = loadPlugin({ Plugin, Notice: class {}, Platform: platform });
   return { P, calls, disk };
@@ -35,7 +36,7 @@ test('mobile: views + new task only, never writes tokens or sync state', async (
   const { P, calls, disk } = harness({ isDesktopApp: false, isMobile: true }, 'phone');
   disk.data = base();
   const p = new P(); await p.onload();
-  assert.ok(calls.includes('cmd:new-task') && calls.includes('ribbon') && calls.includes('block:task-today'));
+  assert.ok(calls.includes('cmd:new-task') && calls.includes('ribbon') && calls.includes('block:task-today') && calls.includes('uri:taskline'));
   assert.ok(!calls.includes('cmd:sync-now') && !calls.includes('status'));
   disk.data.state.map.b = 2; // the sync device wrote newer state meanwhile
   p.settings.defaultReminder = '10m'; p.settings.googleClientId = 'STALE';

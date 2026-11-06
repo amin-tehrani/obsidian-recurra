@@ -1,6 +1,6 @@
 {
   "name": "obsidian-taskline",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Goals timeline, task views with Google-Calendar-style recurrence, and one-way sync to Google Calendar and Microsoft To Do.",
   "main": "main.js",
   "private": true,
