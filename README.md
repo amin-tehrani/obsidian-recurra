@@ -1,6 +1,13 @@
 # Recurra for Obsidian
 
+[![Release](https://img.shields.io/github/v/release/amin-tehrani/obsidian-recurra)](https://github.com/amin-tehrani/obsidian-recurra/releases/latest)
+[![Tests](https://github.com/amin-tehrani/obsidian-recurra/actions/workflows/test.yml/badge.svg)](https://github.com/amin-tehrani/obsidian-recurra/actions/workflows/test.yml)
+[![Downloads](https://img.shields.io/github/downloads/amin-tehrani/obsidian-recurra/total)](https://github.com/amin-tehrani/obsidian-recurra/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Plan goals on a timeline, keep tasks as plain notes, and see them in Google Calendar and Microsoft To Do. Recurring tasks work the way Google Calendar events do.
+
+![Today view](https://raw.githubusercontent.com/amin-tehrani/obsidian-recurra/main/docs/images/today.png)
 
 - **Goal timeline:** each goal is a bar across its date range. Sub-goals sit under their parent, and a red line marks today.
 - **Task views:** Today (with overdue and upcoming tasks), Week (Monday to Sunday), and Upcoming. You can tick, skip or move a task right in the view.
@@ -12,6 +19,19 @@ Plan goals on a timeline, keep tasks as plain notes, and see them in Google Cale
 - **Works on mobile** for viewing, adding and editing tasks. A desktop does the syncing.
 
 Recurra uses no build step and has no dependencies, and it never touches your existing calendars or lists.
+
+### Why
+
+Your tasks stay plain Markdown files on your own devices, so you can link them, search them, and let scripts or AI agents read them. Your phone still gets real calendar events and reminders. Through Microsoft To Do, apps such as Samsung Reminder can ring a full-screen alarm for each task.
+
+## Screenshots
+
+| | |
+|---|---|
+| **Week:** tick, skip or move any occurrence | ![Week view](https://raw.githubusercontent.com/amin-tehrani/obsidian-recurra/main/docs/images/week.png) |
+| **Goal timeline:** goals and sub-goals across their date ranges | ![Goal timeline](https://raw.githubusercontent.com/amin-tehrani/obsidian-recurra/main/docs/images/goal-timeline.png) |
+| **Occurrence list** in a recurring task's note | ![Occurrence list](https://raw.githubusercontent.com/amin-tehrani/obsidian-recurra/main/docs/images/occurrences.png) |
+| **A page for one occurrence,** with its status at the top | ![Occurrence page](https://raw.githubusercontent.com/amin-tehrani/obsidian-recurra/main/docs/images/occurrence-page.png) |
 
 ---
 
@@ -230,8 +250,17 @@ Phones and tablets never sync, because the sign-in flow needs a desktop.
 The plugin is plain CommonJS with no build step: `main.js` is the plugin itself.
 
 ```sh
-npm test   # node --test, no dependencies
+npm test            # node --test, no dependencies
+npm run demo        # writes ./demo-vault: goals, tasks with history, occurrence pages
 ```
+
+`npm run demo` builds a vault dated relative to today, with Recurra installed and no sync connected. Open the folder as a vault in Obsidian to try the plugin or take screenshots. To add only the demo tasks to an existing vault (marked `demo: true` so you can delete them later):
+
+```sh
+node scripts/demo-vault.js <vault> --tasks-only --tasks Tasks --goals Goals
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [changelog](CHANGELOG.md).
 
 To release, bump `version` in `manifest.json` and `package.json`, add the version to `versions.json`, commit, then push a tag with the same version (for example `git tag 1.0.1 && git push --tags`). GitHub Actions runs the tests and attaches `main.js`, `manifest.json` and `styles.css` to a new release.
 

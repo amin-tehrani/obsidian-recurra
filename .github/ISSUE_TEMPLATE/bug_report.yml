@@ -1,0 +1,32 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Task frontmatter
+      description: The frontmatter of an affected task note (remove anything private).
+      render: yaml
+  - type: dropdown
+    attributes:
+      label: Where
+      multiple: true
+      options: [Views in Obsidian, Occurrence pages, Google Calendar sync, Microsoft To Do sync, Links back to Obsidian, Mobile]
+  - type: input
+    attributes:
+      label: Versions
+      description: Recurra, Obsidian, and your OS.
+      placeholder: Recurra 1.3.1, Obsidian 1.10, macOS 26
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Console output
+      description: Errors from the developer console (Ctrl/Cmd+Shift+I), if any. Never paste tokens or your data.json.
+      render: text

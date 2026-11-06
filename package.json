@@ -5,7 +5,8 @@
   "main": "main.js",
   "private": true,
   "scripts": {
-    "test": "TZ=Europe/Rome node --test test/"
+    "test": "TZ=Europe/Rome node --test test/",
+    "demo": "node scripts/demo-vault.js"
   },
   "author": "Amin Tehrani",
   "license": "MIT"

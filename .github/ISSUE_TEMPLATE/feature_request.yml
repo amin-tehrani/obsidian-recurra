@@ -1,0 +1,13 @@
+name: Feature request
+description: An idea for Recurra
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: What you want to do
+      description: The problem or workflow, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: How you imagine it
