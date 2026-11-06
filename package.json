@@ -1,0 +1,12 @@
+{
+  "name": "obsidian-taskline",
+  "version": "1.0.0",
+  "description": "Goals timeline, task views with Google-Calendar-style recurrence, and one-way sync to Google Calendar and Microsoft To Do.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "test": "TZ=Europe/Rome node --test test/"
+  },
+  "author": "Amin Tehrani",
+  "license": "MIT"
+}

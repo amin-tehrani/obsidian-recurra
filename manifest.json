@@ -1,0 +1,10 @@
+{
+  "id": "taskline",
+  "name": "Taskline",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Goals timeline, task views with Google-Calendar-style recurring tasks, and one-way sync to Google Calendar and Microsoft To Do.",
+  "author": "Amin Tehrani",
+  "authorUrl": "https://github.com/amin-tehrani",
+  "isDesktopOnly": false
+}
