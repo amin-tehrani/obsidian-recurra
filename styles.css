@@ -76,3 +76,12 @@
 .is-mobile .tm-row input.tm-check { width: 20px; height: 20px; }
 .is-mobile .tm-tl-row { grid-template-columns: minmax(100px, 140px) 1fr; }
 @media (hover: none) { .tm-actions { opacity: 1; } }
+
+/* occurrence list / occurrence page */
+.tm-occurrences .tm-header .tm-muted { font-size: var(--font-ui-smaller); }
+.tm-occurrences .tm-row { gap: 10px; }
+.tm a.tm-name.tm-nopage { color: var(--text-muted); }
+.tm a.tm-name.tm-nopage:hover { color: var(--text-accent); }
+.tm-occurrences > .tm-btn { margin: 6px 0 0 6px; }
+.tm-occurrence { padding: 8px 10px; border: 1px solid var(--background-modifier-border); border-radius: 8px; }
+.tm-occurrence .tm-header { margin-bottom: 4px; }

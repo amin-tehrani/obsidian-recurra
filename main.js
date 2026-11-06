@@ -16,6 +16,10 @@
  *   done_dates: [2026-11-06]      # per-occurrence completion (recurring)
  *   skipped_dates: [2026-11-10]   # per-occurrence skip (recurring)
  *   moved: ["2026-11-12 -> 2026-11-12T20:00"]  # per-occurrence reschedule (recurring)
+ *
+ * Occurrence pages (optional, one per occurrence of a recurring task):
+ *   <task folder>/<Task>/<Task> 2026-11-06.md  with  type: occurrence, series: "[[Task]]", date: 2026-11-06
+ *   Done/skipped/moved state always lives in the series note; the page is for notes about that day.
  */
 
 const obsidian = require('obsidian');
@@ -665,10 +669,31 @@ class TasklinePlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor('task-week', (src, el, ctx) => ctx.addChild(new TMView(el, this, renderWeek)));
     this.registerMarkdownCodeBlockProcessor('task-upcoming', (src, el, ctx) => ctx.addChild(new TMView(el, this, renderUpcoming)));
     this.registerMarkdownCodeBlockProcessor('goal-timeline', (src, el, ctx) => ctx.addChild(new TMView(el, this, renderTimeline)));
+    this.registerMarkdownCodeBlockProcessor('task-occurrences', (src, el, ctx) => ctx.addChild(new TMView(el, this, renderOccurrences, ctx.sourcePath)));
+    this.registerMarkdownCodeBlockProcessor('task-occurrence', (src, el, ctx) => ctx.addChild(new TMView(el, this, renderOccurrencePage, ctx.sourcePath)));
+    this.addCommand({
+      id: 'insert-occurrence-list',
+      name: 'Add occurrence list to this recurring task',
+      editorCheckCallback: (checking, editor, view) => {
+        const f = view.file;
+        const fm = f && ((this.app.metadataCache.getFileCache(f) || {}).frontmatter || {});
+        const ok = !!f && this.isTaskPath(f.path) && !fm.series && !/```task-occurrences/.test(editor.getValue());
+        if (ok && !checking) {
+          const last = editor.lastLine();
+          const end = { line: last, ch: editor.getLine(last).length };
+          editor.replaceRange((editor.getLine(last).trim() ? '\n\n' : '\n') + OCC_LIST_BLOCK + '\n', end);
+        }
+        return ok;
+      },
+    });
 
     this.addCommand({ id: 'new-task', name: 'New task', callback: () => new NewTaskModal(this).open() });
     this.addRibbonIcon('list-plus', 'New task', () => new NewTaskModal(this).open());
     this.addSettingTab(new TMSettingTab(this.app, this));
+    const dropPages = () => { this._pages = null; };
+    this.registerEvent(this.app.metadataCache.on('changed', dropPages));
+    this.registerEvent(this.app.vault.on('delete', dropPages));
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => { dropPages(); this.moveOccurrenceFolder(file, oldPath); }));
     if (IS_MOBILE) return;
 
     this.addCommand({ id: 'sync-now', name: 'Sync now (Google Calendar + Microsoft To Do)', callback: () => this.sync(true) });
@@ -731,8 +756,55 @@ class TasklinePlugin extends Plugin {
     return this.app.vault.getMarkdownFiles()
       .filter((f) => this.isTaskPath(f.path))
       .map((f) => ({ f, fm: (this.app.metadataCache.getFileCache(f) || {}).frontmatter || {} }))
-      .filter(({ fm }) => !fm.type || toStr(fm.type).toLowerCase() === 'task')
+      .filter(({ fm }) => (!fm.type || toStr(fm.type).toLowerCase() === 'task') && !fm.series)
       .map(({ f, fm }) => readTask(f, fm, this.settings));
+  }
+
+  /* ---------- occurrence pages ---------- */
+
+  /** Map: series path -> Map(original date -> TFile) of existing occurrence pages. */
+  occurrencePages() {
+    const out = new Map();
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!this.isTaskPath(f.path)) continue;
+      const fm = (this.app.metadataCache.getFileCache(f) || {}).frontmatter;
+      if (!fm || !fm.series || toStr(fm.type).toLowerCase() !== 'occurrence') continue;
+      const date = normDate(fm.date);
+      const series = this.app.metadataCache.getFirstLinkpathDest(linkText(fm.series), f.path);
+      if (!date || !series) continue;
+      if (!out.has(series.path)) out.set(series.path, new Map());
+      out.get(series.path).set(date, f);
+    }
+    return out;
+  }
+
+  occurrencePagesCached() {
+    if (!this._pages) this._pages = this.occurrencePages();
+    return this._pages;
+  }
+
+  occurrenceFolder(t) { const dir = t.file.parent ? t.file.parent.path : ''; return (dir && dir !== '/' ? dir + '/' : '') + t.name; }
+
+  /** Open the page for one occurrence (original date) of a series, creating it if needed. */
+  async openOccurrencePage(t, original, newLeaf) {
+    const existing = (this.occurrencePages().get(t.path) || new Map()).get(original);
+    if (existing) { await this.app.workspace.getLeaf(!!newLeaf).openFile(existing); return; }
+    const folder = this.occurrenceFolder(t);
+    if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+    let path = `${folder}/${t.name} ${original}.md`;
+    for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${t.name} ${original} ${i}.md`;
+    const content = ['---', 'type: occurrence', `series: ${JSON.stringify(`[[${t.name}]]`)}`, `date: ${original}`, '---', '', OCC_PAGE_BLOCK, '', ''].join('\n');
+    const file = await this.app.vault.create(path, content);
+    await this.app.workspace.getLeaf(!!newLeaf).openFile(file);
+  }
+
+  async moveOccurrenceFolder(file, oldPath) {
+    if (!file.path.endsWith('.md') || !this.isTaskPath(file.path)) return;
+    const strip = (p) => p.replace(/\.md$/, '');
+    const oldFolder = this.app.vault.getAbstractFileByPath(strip(oldPath));
+    const newFolderPath = strip(file.path);
+    if (!oldFolder || oldFolder.children === undefined || this.app.vault.getAbstractFileByPath(newFolderPath)) return;
+    try { await this.app.fileManager.renameFile(oldFolder, newFolderPath); } catch (e) { console.warn('[taskline] could not move occurrence folder', e); }
   }
 
   getGoals() {
@@ -1044,11 +1116,11 @@ class TasklinePlugin extends Plugin {
 /* ------------------------------------------------------------------ */
 
 class TMView extends MarkdownRenderChild {
-  constructor(el, plugin, renderFn) {
+  constructor(el, plugin, renderFn, sourcePath) {
     super(el);
     this.plugin = plugin;
     this.renderFn = renderFn;
-    this.state = { offset: 0 };
+    this.state = { offset: 0, sourcePath };
   }
   onload() {
     // keep clicks inside the view from putting Live Preview into edit mode
@@ -1058,7 +1130,7 @@ class TMView extends MarkdownRenderChild {
     this.render();
     const p = this.plugin;
     p.views.add(this);
-    const relevant = (path) => p.isTaskPath(path) || p.isGoalPath(path);
+    const relevant = (path) => p.isTaskPath(path) || p.isGoalPath(path) || path === this.state.sourcePath;
     this.registerEvent(p.app.metadataCache.on('changed', (f) => { if (relevant(f.path)) this.queue(); }));
     this.registerEvent(p.app.vault.on('delete', (f) => { if (relevant(f.path)) this.queue(); }));
     this.registerEvent(p.app.vault.on('rename', (f, old) => { if (relevant(f.path) || relevant(old)) this.queue(); }));
@@ -1126,9 +1198,112 @@ function renderRow(container, o, plugin, opts) {
   const actions = row.createDiv({ cls: 'tm-actions' });
   const btn = (text, title, fn) => { const b = actions.createEl('button', { cls: 'tm-btn tm-small', text, attr: { title } }); b.onclick = fn; };
   if (!o.recurring && o.status === 'Not started') btn('▶', `Start (${statusLabel('In progress', plugin.settings)})`, () => plugin.setStatus(t, 'In progress'));
+  if (o.recurring && !opts.onPage) {
+    const pages = plugin.occurrencePagesCached().get(t.path);
+    const has = pages && pages.get(o.original);
+    if (has) main.createSpan({ cls: 'tm-icon tm-clickable', text: '📝', attr: { title: 'Open this day\'s page' } }).onclick = (e) => plugin.openOccurrencePage(t, o.original, e.metaKey || e.ctrlKey);
+    else btn('📝', 'Create a page for this day', (e) => plugin.openOccurrencePage(t, o.original, e.metaKey || e.ctrlKey));
+  }
   if (o.recurring) btn(o.skipped ? '↺' : '⤼', o.skipped ? 'Un-skip this day' : 'Skip this day', () => plugin.toggleSkip(o));
   if (!o.skipped) btn('🕑', o.recurring ? 'Move this occurrence' : 'Reschedule', () => new MoveModal(plugin, o).open());
   return row;
+}
+
+const OCC_LIST_BLOCK = '```task-occurrences\n```';
+const OCC_PAGE_BLOCK = '```task-occurrence\n```';
+
+/** Original dates of a series in [from, to] (to = null: open-ended, up to `limit` dates). */
+function seriesDates(t, from, to, limit) {
+  const out = [];
+  if (!t.recurring) return out;
+  const start = parseYmd(t.when.date);
+  const last = t.until && (!to || t.until < to) ? t.until : to;
+  let d = parseYmd(from > t.when.date ? from : t.when.date);
+  for (let i = 0; i < 20000 && (!last || ymd(d) <= last) && (!limit || out.length < limit); i++, d = addDays(d, 1)) {
+    if (matches(t.rule, start, d)) out.push(ymd(d));
+  }
+  return out;
+}
+
+/** The occurrence for an original date of a series (null if the rule doesn't produce that date). */
+function occurrenceOn(t, original) {
+  if (!t.recurring || !matches(t.rule, parseYmd(t.when.date), parseYmd(original)) || original < t.when.date || (t.until && original > t.until)) return null;
+  const w = t.moved[original];
+  return w ? makeOcc(t, original, w.date, w.time || t.when.time, { moved: true }) : makeOcc(t, original, original, t.when.time);
+}
+
+/** In a recurring task note: every occurrence so far (newest first) + the next one, each with its own page. */
+function renderOccurrences(el, plugin, state) {
+  const root = el.createDiv({ cls: 'tm tm-occurrences' });
+  const t = plugin.getTasks().find((x) => x.path === state.sourcePath);
+  if (!t || !t.recurring) {
+    root.createDiv({ cls: 'tm-empty', text: t && t.ruleError ? `⚠ ${t.ruleError}` : 'Occurrences appear here once this task has a "time" and a "recurring" rule.' });
+    return;
+  }
+  const today = todayYmd();
+  const pages = plugin.occurrencePagesCached().get(t.path) || new Map();
+  const occs = seriesDates(t, t.when.date, today).reverse().map((d) => occurrenceOn(t, d)).filter(Boolean);
+  const next = seriesDates(t, ymd(addDays(parseYmd(today), 1)), null, 1)[0];
+  const counted = occs.filter((o) => !o.skipped);
+  const done = counted.filter((o) => o.status === 'Done').length;
+
+  const h = root.createDiv({ cls: 'tm-header' });
+  h.createDiv({ cls: 'tm-title', text: 'Occurrences' });
+  h.createSpan({ cls: 'tm-muted', text: `${describeRule(t.rule)}${t.until ? ` until ${t.until}` : ''} · ${done}/${counted.length} done${counted.length ? ` (${Math.round(done / counted.length * 100)}%)` : ''}` });
+
+  const row = (o, label) => {
+    const r = root.createDiv({ cls: 'tm-row tm-occ' + (o.status === 'Done' ? ' is-done' : '') + (o.skipped ? ' is-skipped' : '') });
+    const cb = r.createEl('input', { type: 'checkbox', cls: 'task-list-item-checkbox tm-check' });
+    cb.checked = o.status === 'Done';
+    cb.disabled = !!o.skipped;
+    cb.onclick = (e) => { e.preventDefault(); plugin.toggleDone(o); };
+    const main = r.createDiv({ cls: 'tm-main' });
+    const page = pages.get(o.original);
+    const a = main.createEl('a', {
+      cls: 'tm-name' + (page ? '' : ' tm-nopage'),
+      text: fmtDay(o.original, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }),
+      href: '#', attr: { title: page ? `Open ${page.basename}` : 'Create a page for this day' },
+    });
+    a.onclick = (e) => { e.preventDefault(); plugin.openOccurrencePage(t, o.original, e.metaKey || e.ctrlKey); };
+    if (o.time || o.moved) main.createSpan({ cls: 'tm-muted', text: o.moved ? `→ moved to ${fmtDay(o.date, { month: 'short', day: 'numeric' })}${o.time ? ' ' + o.time : ''}` : o.time });
+    if (o.skipped) main.createSpan({ cls: 'tm-muted', text: 'skipped' });
+    if (label) main.createSpan({ cls: 'tm-goal', text: label });
+    if (page) main.createSpan({ cls: 'tm-icon', text: '📝' });
+    const actions = r.createDiv({ cls: 'tm-actions' });
+    const b = (text, title, fn) => { const x = actions.createEl('button', { cls: 'tm-btn tm-small', text, attr: { title } }); x.onclick = fn; };
+    b(o.skipped ? '↺' : '⤼', o.skipped ? 'Un-skip this day' : 'Skip this day', () => plugin.toggleSkip(o));
+    if (!o.skipped) b('🕑', 'Move this occurrence', () => new MoveModal(plugin, o).open());
+  };
+
+  if (next) { const o = occurrenceOn(t, next); if (o) row(o, 'next'); }
+  if (!occs.length && !next) root.createDiv({ cls: 'tm-empty', text: 'No occurrences.' });
+  const LIMIT = 30;
+  occs.slice(0, state.showAll ? occs.length : LIMIT).forEach((o) => row(o, o.original === today ? 'today' : ''));
+  if (occs.length > LIMIT) {
+    root.createEl('button', { cls: 'tm-btn', text: state.showAll ? 'Show fewer' : `Show all ${occs.length}` }).onclick = () => { state.showAll = !state.showAll; el.empty(); renderOccurrences(el, plugin, state); };
+  }
+}
+
+/** On an occurrence page: that day's status with the usual controls, linked to its series. */
+function renderOccurrencePage(el, plugin, state) {
+  const root = el.createDiv({ cls: 'tm tm-occurrence' });
+  const f = plugin.app.vault.getAbstractFileByPath(state.sourcePath);
+  const fm = (f && (plugin.app.metadataCache.getFileCache(f) || {}).frontmatter) || {};
+  const date = normDate(fm.date);
+  const seriesFile = fm.series ? plugin.app.metadataCache.getFirstLinkpathDest(linkText(fm.series), state.sourcePath) : null;
+  const t = seriesFile && plugin.getTasks().find((x) => x.path === seriesFile.path);
+  if (!t || !date) { root.createDiv({ cls: 'tm-warn', text: 'This page needs "series: [[Recurring task]]" and "date: YYYY-MM-DD" properties.' }); return; }
+  const o = occurrenceOn(t, date);
+  if (!o) { root.createDiv({ cls: 'tm-warn', text: `${t.name} has no occurrence on ${date} (${t.recurring ? describeRule(t.rule) : 'not recurring'}).` }); return; }
+  const h = root.createDiv({ cls: 'tm-header' });
+  h.createDiv({ cls: 'tm-title', text: fmtDay(date, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) });
+  const prevNext = h.createDiv({ cls: 'tm-nav' });
+  const prev = seriesDates(t, t.when.date, ymd(addDays(parseYmd(date), -1))).pop();
+  const nxt = seriesDates(t, ymd(addDays(parseYmd(date), 1)), null, 1)[0];
+  const nb = (text, target, title) => { const x = prevNext.createEl('button', { cls: 'tm-btn', text, attr: { title } }); x.disabled = !target; if (target) x.onclick = () => plugin.openOccurrencePage(t, target); };
+  nb('‹', prev, prev ? `Previous: ${prev}` : 'First occurrence');
+  nb('›', nxt, nxt ? `Next: ${nxt}` : 'Last occurrence');
+  renderRow(root, o, plugin, { onPage: true });
 }
 
 function renderToday(el, plugin, state, rerender) {
@@ -1401,12 +1576,15 @@ class NewTaskModal extends Modal {
       lines.push(`recurring: ${JSON.stringify(v.recurring)}`);
       if (v.until) lines.push(`until: ${v.until}`);
       lines.push('done_dates: []', 'skipped_dates: []', 'moved: []');
+      this.withOccurrenceList = true;
     } else {
       lines.push(`status: ${JSON.stringify(statusLabel('Not started', this.plugin.settings))}`);
     }
     const rem = v.reminder ? v.reminder.split(/[,;]/).map((x) => x.trim()).filter(Boolean) : [];
     lines.push(`reminder: ${rem.length > 1 ? `[${rem.join(', ')}]` : (rem[0] || '')}`);
-    lines.push('---', '', '');
+    lines.push('---', '');
+    if (this.withOccurrenceList) lines.push(OCC_LIST_BLOCK, '');
+    lines.push('');
     const folder = this.plugin.settings.tasksFolder.replace(/\/$/, '');
     if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
     let path = `${folder}/${name}.md`;
@@ -1517,5 +1695,5 @@ module.exports = TasklinePlugin;
 module.exports.default = TasklinePlugin;
 module.exports._lib = {
   parseRule, describeRule, matches, readTask, occurrencesBetween, nextPending, firstOccurrence,
-  toRRule, toGraphPattern, gSeriesBody, gMovedBodies, todoBody, parseWhen, parseDuration, parseMoved, parseReminder, describeReminder, normStatus, statusLabel,
+  toRRule, toGraphPattern, gSeriesBody, gMovedBodies, todoBody, parseWhen, parseDuration, parseMoved, parseReminder, describeReminder, normStatus, statusLabel, seriesDates, occurrenceOn,
 };

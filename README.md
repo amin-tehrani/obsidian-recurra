@@ -70,6 +70,34 @@ Taskline accepts only rules that both Google Calendar and Microsoft To Do can re
 
 Occurrences are identified by their original date, the same way calendar apps track exceptions.
 
+### A page for each occurrence
+
+Add an occurrence list to a recurring task's note. **New task** does this automatically, and for an existing note you can run the command *Add occurrence list to this recurring task*:
+
+````markdown
+```task-occurrences
+```
+````
+
+The list shows every occurrence so far, newest first, plus the next one. It includes the done ratio, and each row has a checkbox and skip/move buttons. Click a date to open that day's own page. The first click creates it:
+
+```
+Tasks/Morning run.md                          ← the series
+Tasks/Morning run/Morning run 2026-01-07.md   ← one page per occurrence
+```
+
+```yaml
+---
+type: occurrence
+series: "[[Morning run]]"
+date: 2026-01-07        # the occurrence's original date
+---
+```
+
+Each occurrence page is yours for notes, links or a log of that day. At the top it shows the day's status with the same controls, plus ‹ › buttons to step to the previous or next occurrence. The 📝 button in **Today** and **Week** opens or creates the page for that day.
+
+Done, skipped and moved still live in the series note, so sync is unaffected and you never have to update two places. Occurrence pages are never synced as tasks of their own. If you rename the series, its occurrence folder is renamed with it.
+
 ### Reminders
 
 `reminder` counts back from the task's start time. It accepts `10m`, `1h`, `1h30m`, `1d`, `1w`, `at start` and `none`. To set several, use a list like `[1d, 10m]`.
@@ -109,7 +137,12 @@ Put any of these code blocks in a note:
 
 ```goal-timeline
 ```
+
+```task-occurrences
+```
 ````
+
+`task-occurrences` belongs inside a recurring task's own note.
 
 ## Setting up sync
 
