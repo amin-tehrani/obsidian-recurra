@@ -23,14 +23,14 @@
   <a id="btn" class="btn" href="#" hidden>Open in Obsidian</a>
   <p class="muted">This page only passes the link in its address to the Obsidian app on this device.
   The link is the part after "#", which browsers never send to any server.
-  Made for <a href="https://github.com/amin-tehrani/obsidian-taskline">Taskline</a>.</p>
+  Made for <a href="https://github.com/amin-tehrani/obsidian-recurra">Recurra</a>.</p>
 </main>
 <script>
 (function () {
   var target = '';
   try { target = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* malformed */ }
-  // Only Taskline / plain "open" links are forwarded.
-  var ok = /^obsidian:\/\/(taskline|open)\?[^\s<>"]*$/.test(target);
+  // Only Recurra / plain "open" links are forwarded.
+  var ok = /^obsidian:\/\/(recurra|open)\?[^\s<>"]*$/.test(target);
   var title = document.getElementById('title');
   var btn = document.getElementById('btn');
   if (!ok) { title.textContent = 'Not an Obsidian link'; return; }

@@ -1,8 +1,8 @@
 'use strict';
 /*
- * Taskline — goals timeline, task views with Google-Calendar-style recurrence,
+ * Recurra — goals timeline, task views with Google-Calendar-style recurrence,
  * and one-way sync (Obsidian → Google Calendar, Obsidian → Microsoft To Do).
- * https://github.com/amin-tehrani/obsidian-taskline  ·  MIT License
+ * https://github.com/amin-tehrani/obsidian-recurra  ·  MIT License
  *
  * Task note frontmatter (files in the tasks folder):
  *   type: task
@@ -31,7 +31,8 @@ const normalizePath = obsidian.normalizePath || ((p) => p.replace(/\\/g, '/').re
 const IS_MOBILE = !!(obsidian.Platform && !obsidian.Platform.isDesktopApp);
 const LOCAL_SETTING_KEYS = ['tasksFolder', 'goalsFolder', 'defaultDuration', 'defaultReminder',
   'statusTodo', 'statusDoing', 'statusDone', 'goalStartProp', 'goalEndProp', 'goalParentProp'];
-const DEVICE_KEY = 'taskline-device-id';
+const DEVICE_KEY = 'recurra-device-id';
+const LEGACY_DEVICE_KEY = 'taskline-device-id'; // name used before 1.3
 /** Random id of this device for this vault (kept in Obsidian's local storage, which is never synced). */
 function deviceId(app) {
   try {
@@ -39,8 +40,8 @@ function deviceId(app) {
     const set = (k, v) => (app && app.saveLocalStorage ? app.saveLocalStorage(k, v) : window.localStorage.setItem(k, v));
     let id = get(DEVICE_KEY);
     if (!id) {
-      let legacy = null; // ids from 1.0–1.1 were kept in window.localStorage
-      try { legacy = window.localStorage.getItem(DEVICE_KEY); } catch (e) { /* none */ }
+      let legacy = get(LEGACY_DEVICE_KEY); // 1.2 kept it under the old name; 1.0–1.1 in window.localStorage
+      try { legacy = legacy || window.localStorage.getItem(LEGACY_DEVICE_KEY); } catch (e) { /* none */ }
       id = legacy || Math.random().toString(36).slice(2) + Date.now().toString(36);
       set(DEVICE_KEY, id);
     }
@@ -71,9 +72,10 @@ const DEFAULT_SETTINGS = {
   msListName: 'Obsidian',
   syncDevice: '', // id of the one desktop that syncs (set on first sync / connect)
   linkStyle: 'web', // links in synced events/tasks: 'web' (https page that opens the app; works on phones) | 'obsidian' | 'none'
-  linkBase: 'https://amin-tehrani.github.io/obsidian-taskline/open/',
+  linkBase: 'https://amin-tehrani.github.io/obsidian-recurra/open/',
   linkVault: false, // put the vault name in links (off: the open vault is used, which survives different vault names per device)
 };
+const OLD_LINK_BASE = 'https://amin-tehrani.github.io/obsidian-taskline/open/'; // before the rename to Recurra
 const INSTANCE_WINDOW = { before: 3, after: 14 }; // days around today whose Google instances get a per-day link
 
 /** Map a status value to 'Not started' | 'In progress' | 'Done' (canonical, used internally). */
@@ -481,13 +483,13 @@ function toGraphPattern(rule, seriesStart) {
   return null;
 }
 
-/** obsidian://taskline?task=<path>[&date=<original date>] — handled by this plugin on every device. */
+/** obsidian://recurra?task=<path>[&date=<original date>] — handled by this plugin on every device. */
 function obsidianUri(ctx, path, date) {
   const q = [];
   if (ctx.vault) q.push(`vault=${encodeURIComponent(ctx.vault)}`);
   q.push(`task=${encodeURIComponent(path)}`);
   if (date) q.push(`date=${date}`);
-  return `obsidian://taskline?${q.join('&')}`;
+  return `obsidian://recurra?${q.join('&')}`;
 }
 /** The link put into Google/To Do, or null. */
 function openLink(ctx, path, date) {
@@ -696,7 +698,7 @@ async function postForm(url, params) {
 /* Plugin                                                              */
 /* ------------------------------------------------------------------ */
 
-class TasklinePlugin extends Plugin {
+class RecurraPlugin extends Plugin {
   async onload() {
     const data = (await this.loadData()) || {};
     this.data = {
@@ -705,6 +707,7 @@ class TasklinePlugin extends Plugin {
       state: Object.assign({ map: {} }, data.state || {}),
     };
     this.settings = this.data.settings;
+    if (this.settings.linkBase === OLD_LINK_BASE) this.settings.linkBase = DEFAULT_SETTINGS.linkBase;
     this.syncing = false;
     this.views = new Set();
     this.lastSync = null;
@@ -735,7 +738,7 @@ class TasklinePlugin extends Plugin {
     this.addCommand({ id: 'new-task', name: 'New task', callback: () => new NewTaskModal(this).open() });
     this.addRibbonIcon('list-plus', 'New task', () => new NewTaskModal(this).open());
     this.addSettingTab(new TMSettingTab(this.app, this));
-    this.registerObsidianProtocolHandler('taskline', (params) => this.openFromLink(params));
+    this.registerObsidianProtocolHandler('recurra', (params) => this.openFromLink(params));
     const dropPages = () => { this._pages = null; };
     this.registerEvent(this.app.metadataCache.on('changed', dropPages));
     this.registerEvent(this.app.vault.on('delete', dropPages));
@@ -824,7 +827,7 @@ class TasklinePlugin extends Plugin {
     return out;
   }
 
-  /** obsidian://taskline?task=<path>[&date=YYYY-MM-DD]: open the task, or that day's page (created if needed). */
+  /** obsidian://recurra?task=<path>[&date=YYYY-MM-DD]: open the task, or that day's page (created if needed). */
   async openFromLink(params) {
     if (!this.app.metadataCache.resolved) {
       await new Promise((resolve) => {
@@ -836,7 +839,7 @@ class TasklinePlugin extends Plugin {
     const tasks = this.getTasks();
     const base = path.split('/').pop().replace(/\.md$/, '');
     const t = tasks.find((x) => x.path === path) || tasks.find((x) => x.name === base);
-    if (!t) { new Notice(`Taskline: task not found: ${path}`); return; }
+    if (!t) { new Notice(`Recurra: task not found: ${path}`); return; }
     const date = normDate(params.date);
     if (date && t.recurring) await this.openOccurrencePage(t, date);
     else this.openNote(t.path);
@@ -868,7 +871,7 @@ class TasklinePlugin extends Plugin {
     const oldFolder = this.app.vault.getAbstractFileByPath(strip(oldPath));
     const newFolderPath = normalizePath(strip(file.path));
     if (!(oldFolder instanceof TFolder) || this.app.vault.getAbstractFileByPath(newFolderPath)) return;
-    try { await this.app.fileManager.renameFile(oldFolder, newFolderPath); } catch (e) { console.warn('[taskline] could not move occurrence folder', e); }
+    try { await this.app.fileManager.renameFile(oldFolder, newFolderPath); } catch (e) { console.warn('[recurra] could not move occurrence folder', e); }
   }
 
   getGoals() {
@@ -936,12 +939,12 @@ class TasklinePlugin extends Plugin {
   async sync(manual) {
     if (IS_MOBILE) return;
     if (!this.isSyncDevice()) {
-      if (manual) new Notice('Taskline: another device syncs this vault. To sync from here, use Settings → Taskline → "Sync from this device".');
+      if (manual) new Notice('Recurra: another device syncs this vault. To sync from here, use Settings → Recurra → "Sync from this device".');
       return;
     }
     if (!manual && !this.settings.autoSync) return;
     if (!this.googleReady() && !this.msReady()) {
-      if (manual) new Notice('Taskline: connect Google Calendar or Microsoft To Do in the plugin settings first.');
+      if (manual) new Notice('Recurra: connect Google Calendar or Microsoft To Do in the plugin settings first.');
       return;
     }
     if (!this.settings.syncDevice) this.settings.syncDevice = deviceId(this.app);
@@ -972,7 +975,7 @@ class TasklinePlugin extends Plugin {
       this.syncing = false;
       this.updateStatus();
       if (manual) new Notice(errors.length ? `Task sync finished with ${errors.length} error(s):\n${errors.slice(0, 5).join('\n')}` : 'Tasks synced ✓');
-      if (errors.length) console.warn('[taskline] sync errors', errors);
+      if (errors.length) console.warn('[recurra] sync errors', errors);
       if (this.syncAgain) { this.syncAgain = false; this.scheduleSync(); }
     }
   }
@@ -991,7 +994,7 @@ class TasklinePlugin extends Plugin {
       })).catch((e) => {
       const name = svc === 'google' ? 'Google Calendar' : 'Microsoft To Do';
       if (/invalid_grant|expired|revoked/i.test(e.message)) {
-        if (!this.reconnectNoticeShown) new Notice(`${name} sign-in expired. Open Settings → Taskline and click Reconnect.`, 15000);
+        if (!this.reconnectNoticeShown) new Notice(`${name} sign-in expired. Open Settings → Recurra and click Reconnect.`, 15000);
         this.reconnectNoticeShown = true;
         throw new Error('sign-in expired — reconnect in settings');
       }
@@ -1249,7 +1252,7 @@ class TMView extends MarkdownRenderChild {
   render() {
     this.containerEl.empty();
     try { this.renderFn(this.containerEl, this.plugin, this.state, () => this.render()); } catch (e) {
-      this.containerEl.createDiv({ cls: 'tm-warn', text: `Taskline view error: ${e.message}` });
+      this.containerEl.createDiv({ cls: 'tm-warn', text: `Recurra view error: ${e.message}` });
       console.error(e);
     }
   }
@@ -1739,7 +1742,7 @@ class TMSettingTab extends PluginSettingTab {
     containerEl.empty();
     const intro = containerEl.createEl('p', { cls: 'setting-item-description' });
     intro.appendText('Setup guide for Google Calendar and Microsoft To Do: ');
-    intro.createEl('a', { text: 'README', href: 'https://github.com/amin-tehrani/obsidian-taskline#setting-up-sync' });
+    intro.createEl('a', { text: 'README', href: 'https://github.com/amin-tehrani/obsidian-recurra#setting-up-sync' });
 
     new Setting(containerEl).setName('Tasks folder').addText((t) => t.setValue(s.tasksFolder).onChange(async (x) => { s.tasksFolder = x.trim(); await save(); }));
     new Setting(containerEl).setName('Goals folder').addText((t) => t.setValue(s.goalsFolder).onChange(async (x) => { s.goalsFolder = x.trim(); await save(); }));
@@ -1812,8 +1815,8 @@ class TMSettingTab extends PluginSettingTab {
   }
 }
 
-module.exports = TasklinePlugin;
-module.exports.default = TasklinePlugin;
+module.exports = RecurraPlugin;
+module.exports.default = RecurraPlugin;
 module.exports._lib = {
   parseRule, describeRule, matches, readTask, occurrencesBetween, nextPending, firstOccurrence,
   toRRule, toGraphPattern, gSeriesBody, gMovedBodies, todoBody, parseWhen, parseDuration, parseMoved, parseReminder, describeReminder, normStatus, statusLabel, seriesDates, occurrenceOn,

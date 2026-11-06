@@ -1,4 +1,4 @@
-# Taskline for Obsidian
+# Recurra for Obsidian
 
 Plan goals on a timeline, keep tasks as plain notes, and see them in Google Calendar and Microsoft To Do. Recurring tasks work the way Google Calendar events do.
 
@@ -11,15 +11,15 @@ Plan goals on a timeline, keep tasks as plain notes, and see them in Google Cale
 - **Reminders** sync to both services.
 - **Works on mobile** for viewing, adding and editing tasks. A desktop does the syncing.
 
-Taskline uses no build step and has no dependencies, and it never touches your existing calendars or lists.
+Recurra uses no build step and has no dependencies, and it never touches your existing calendars or lists.
 
 ---
 
 ## Install
 
-**Manually:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/amin-tehrani/obsidian-taskline/releases/latest). Put them in `<your vault>/.obsidian/plugins/taskline/`, then go to Settings → Community plugins and enable **Taskline**.
+**Manually:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/amin-tehrani/obsidian-recurra/releases/latest). Put them in `<your vault>/.obsidian/plugins/recurra/`, then go to Settings → Community plugins and enable **Recurra**.
 
-**With [BRAT](https://github.com/TfTHacker/obsidian42-brat):** choose *Add beta plugin* and enter `amin-tehrani/obsidian-taskline`.
+**With [BRAT](https://github.com/TfTHacker/obsidian42-brat):** choose *Add beta plugin* and enter `amin-tehrani/obsidian-recurra`.
 
 The [`examples/`](examples) folder has sample tasks, goals and view notes you can copy into your vault.
 
@@ -43,11 +43,11 @@ moved: []
 ---
 ```
 
-To create a task quickly, use **New task**. It's in the ribbon, the command palette, and the **+ New task** button in the Today view. On mobile you can set Obsidian's pull-down quick action to *Taskline: New task*.
+To create a task quickly, use **New task**. It's in the ribbon, the command palette, and the **+ New task** button in the Today view. On mobile you can set Obsidian's pull-down quick action to *Recurra: New task*.
 
 ### Repeat rules
 
-Taskline accepts only rules that both Google Calendar and Microsoft To Do can represent exactly. That way a series always looks the same in all three places.
+Recurra accepts only rules that both Google Calendar and Microsoft To Do can represent exactly. That way a series always looks the same in all three places.
 
 | You write | Means |
 |---|---|
@@ -148,7 +148,7 @@ Put any of these code blocks in a note:
 
 Sync is **one-way**: Obsidian → Google Calendar / Microsoft To Do. Make your edits in Obsidian. A change made in Google or To Do is overwritten the next time that task syncs.
 
-Taskline syncs about 10 seconds after you edit a task, every 10 minutes, and when you click the status-bar item. Sync only runs while Obsidian is open on the sync device (see [Multiple devices](#multiple-devices)).
+Recurra syncs about 10 seconds after you edit a task, every 10 minutes, and when you click the status-bar item. Sync only runs while Obsidian is open on the sync device (see [Multiple devices](#multiple-devices)).
 
 Each person uses their own free API credentials, so your data goes only between your computer, Google and Microsoft.
 
@@ -159,12 +159,12 @@ Each person uses their own free API credentials, so your data goes only between 
 3. Go to **Google Auth Platform → Branding** and set an app name and your email. Choose **External** as the audience.
 4. Go to **Audience → Test users** and add your own Google account.
 5. Go to **Clients → Create client**, choose application type **Desktop app**, and copy the client ID and secret.
-6. In Obsidian, open **Settings → Taskline → Google Calendar**, paste both values, and click **Connect**.
+6. In Obsidian, open **Settings → Recurra → Google Calendar**, paste both values, and click **Connect**.
    - Google will warn that it "hasn't verified this app". That's expected, because the app is your own. Click **Continue**.
 
-Taskline asks only for `calendar.app.created`. This scope lets it create its own calendar ("Obsidian Tasks") and manage events in that calendar only. It cannot read your other calendars.
+Recurra asks only for `calendar.app.created`. This scope lets it create its own calendar ("Obsidian Tasks") and manage events in that calendar only. It cannot read your other calendars.
 
-> While the Google app is in *Testing* mode, Google signs you out every 7 days. Taskline then shows a notice, and you click **Reconnect**. To avoid this, publish the app under **Audience → Publish app**. Google may ask for a home page and a privacy policy link first. Any page you control, such as a GitHub page, works.
+> While the Google app is in *Testing* mode, Google signs you out every 7 days. Recurra then shows a notice, and you click **Reconnect**. To avoid this, publish the app under **Audience → Publish app**. Google may ask for a home page and a privacy policy link first. Any page you control, such as a GitHub page, works.
 
 ### Microsoft To Do
 
@@ -172,10 +172,10 @@ Taskline asks only for `calendar.app.created`. This scope lets it create its own
    - **Supported account types:** *Accounts in any organizational directory and personal Microsoft accounts*.
    - **Redirect URI:** platform **Public client/native (mobile & desktop)**, value `http://localhost`.
 2. Copy the **Application (client) ID**.
-3. In Obsidian, open **Settings → Taskline → Microsoft To Do**, paste the ID, and click **Connect**.
+3. In Obsidian, open **Settings → Recurra → Microsoft To Do**, paste the ID, and click **Connect**.
    - If the registration allows personal accounts only, set **Tenant** to `consumers`.
 
-Taskline asks for `Tasks.ReadWrite` and creates its own list ("Obsidian").
+Recurra asks for `Tasks.ReadWrite` and creates its own list ("Obsidian").
 
 ### Links back to Obsidian (desktop and phone)
 
@@ -186,11 +186,11 @@ Every synced event and To Do task has a **📝 Open in Obsidian** link:
 - **Moved day:** the link opens the page for that day.
 - **To Do:** the link opens the page for the next pending day.
 
-The links run a Taskline action (`obsidian://taskline?task=…&date=…`). Taskline is installed on all your devices, so the same link works on a computer and on a phone.
+The links run a Recurra action (`obsidian://recurra?task=…&date=…`). Recurra is installed on all your devices, so the same link works on a computer and on a phone.
 
 Phone calendar and To Do apps don't open `obsidian://` links, so by default each link goes through a [small forwarding page](docs/open/index.html) hosted on GitHub Pages. The page hands the link to the Obsidian app; on Android it uses an app link. Your link is the part after `#`, which browsers never send to any server.
 
-Under **Settings → Taskline → Links back to Obsidian** you can:
+Under **Settings → Recurra → Links back to Obsidian** you can:
 - switch to direct `obsidian://` links, or turn links off;
 - host your own copy of the forwarding page;
 - include the vault name in links. By default it's left out, so links open in whichever vault is open. That still works if the vault has a different name on your phone.
@@ -201,13 +201,13 @@ Vaults are often shared between devices through Obsidian Sync, iCloud, Syncthing
 
 - The first desktop that connects or syncs becomes the sync device.
 - Other desktops and phones still show and edit tasks normally. Their changes are synced once they reach the sync device.
-- To move syncing to another computer, open Settings → Taskline on it and click **Sync from this device**. Connecting an account from a computer also makes it the sync device.
+- To move syncing to another computer, open Settings → Recurra on it and click **Sync from this device**. Connecting an account from a computer also makes it the sync device.
 
 Phones and tablets never sync, because the sign-in flow needs a desktop.
 
 ### Privacy and security
 
-- Sign-in tokens and the client secret are stored in the plugin's `data.json` inside your vault. **If you put your vault in a public git repository, add `.obsidian/plugins/taskline/data.json` to `.gitignore`.**
+- Sign-in tokens and the client secret are stored in the plugin's `data.json` inside your vault. **If you put your vault in a public git repository, add `.obsidian/plugins/recurra/data.json` to `.gitignore`.**
 - Network requests go only to `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`, `login.microsoftonline.com` and `graph.microsoft.com`. The forwarding page for links is a static page: opening it sends nothing about your task, because the link is after the `#`.
 - Sign-in uses OAuth with PKCE and a temporary server on 127.0.0.1/localhost that exists only while you sign in.
 
@@ -216,7 +216,7 @@ Phones and tablets never sync, because the sign-in flow needs a desktop.
 - **Accounts:** syncing needs a Google account and/or a Microsoft account. You set up your own free OAuth app for each; see *Setting up sync*. Without them, the views, recurring tasks and occurrence pages all work offline.
 - **Network use:** only when sync is connected, and only to Google's and Microsoft's sign-in and API servers listed above. Links in synced events point to a static forwarding page on GitHub Pages; you can turn that off in settings.
 - **No telemetry, no ads, no payments.** Nothing is sent to the author.
-- **Files:** Taskline reads and writes notes only in the tasks and goals folders you configure, and in the occurrence-page folders it creates there.
+- **Files:** Recurra reads and writes notes only in the tasks and goals folders you configure, and in the occurrence-page folders it creates there.
 
 ## Limitations
 

@@ -6,19 +6,19 @@ const P = loadPlugin();
 const L = P._lib;
 const S = { defaultDuration: 30, defaultReminder: 'at start' };
 const mk = (fm, path = 'Tasks/Morning run.md') => L.readTask({ path, basename: path.split('/').pop().replace('.md', '') }, fm, S);
-const BASE = 'https://example.github.io/taskline/open/';
+const BASE = 'https://example.github.io/recurra/open/';
 const ctx = { tz: 'Europe/Rome', today: '2026-11-06', vault: '', linkStyle: 'web', linkBase: BASE };
 
 test('obsidian:// link: task path and optional date, vault only when asked', () => {
-  assert.equal(L.obsidianUri(ctx, 'Tasks/Morning run.md', '2026-11-06'), 'obsidian://taskline?task=Tasks%2FMorning%20run.md&date=2026-11-06');
-  assert.equal(L.obsidianUri({ vault: 'My Vault' }, 'T.md'), 'obsidian://taskline?vault=My%20Vault&task=T.md');
+  assert.equal(L.obsidianUri(ctx, 'Tasks/Morning run.md', '2026-11-06'), 'obsidian://recurra?task=Tasks%2FMorning%20run.md&date=2026-11-06');
+  assert.equal(L.obsidianUri({ vault: 'My Vault' }, 'T.md'), 'obsidian://recurra?vault=My%20Vault&task=T.md');
 });
 
 test('web link wraps the obsidian link after # (never sent to the server)', () => {
   const url = L.openLink(ctx, 'Tasks/Morning run.md', '2026-11-06');
   assert.ok(url.startsWith(BASE + '#'));
-  assert.equal(decodeURIComponent(url.split('#')[1]), 'obsidian://taskline?task=Tasks%2FMorning%20run.md&date=2026-11-06');
-  assert.equal(L.openLink({ ...ctx, linkStyle: 'obsidian' }, 'T.md'), 'obsidian://taskline?task=T.md');
+  assert.equal(decodeURIComponent(url.split('#')[1]), 'obsidian://recurra?task=Tasks%2FMorning%20run.md&date=2026-11-06');
+  assert.equal(L.openLink({ ...ctx, linkStyle: 'obsidian' }, 'T.md'), 'obsidian://recurra?task=T.md');
   assert.equal(L.openLink({ ...ctx, linkStyle: 'none' }, 'T.md'), null);
 });
 
@@ -26,14 +26,14 @@ test('descriptions: series links the note, moved/instance days link their page, 
   const t = mk({ time: '2026-11-02T07:00', recurring: 'every day', goal: '[[A <b> & C]]', moved: ['2026-11-09 -> 2026-11-10T20:00'] });
   const series = L.gSeriesBody(t, ctx).description;
   assert.match(series, /Goal: A &lt;b&gt; &amp; C/);
-  assert.match(series, /<a href="https:\/\/example\.github\.io\/taskline\/open\/#obsidian%3A%2F%2Ftaskline%3Ftask%3DTasks%252FMorning%2520run\.md">📝 Open in Obsidian<\/a>/);
+  assert.match(series, /<a href="https:\/\/example\.github\.io\/recurra\/open\/#obsidian%3A%2F%2Frecurra%3Ftask%3DTasks%252FMorning%2520run\.md">📝 Open in Obsidian<\/a>/);
   const moved = L.gMovedBodies(t, ctx)['2026-11-09'].description;
   assert.match(moved, /^Moved from Mon, Nov 9<br>/);
   assert.match(moved, /date%3D2026-11-09/);
   assert.match(L.gDescription(t, ctx, '2026-11-07'), /📝 Open Sat, Nov 7 in Obsidian/);
   // To Do: plain text, link to the next pending occurrence
   const td = L.todoBody(t, ctx).body.content;
-  assert.match(td, /Open Fri, Nov 6 in Obsidian: https:\/\/example\.github\.io\/taskline\/open\/#obsidian%3A%2F%2Ftaskline%3Ftask%3DTasks%252FMorning%2520run\.md%26date%3D2026-11-06$/);
+  assert.match(td, /Open Fri, Nov 6 in Obsidian: https:\/\/example\.github\.io\/recurra\/open\/#obsidian%3A%2F%2Frecurra%3Ftask%3DTasks%252FMorning%2520run\.md%26date%3D2026-11-06$/);
 });
 
 function fakeGoogle() {

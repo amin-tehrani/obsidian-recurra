@@ -36,7 +36,7 @@ test('mobile: views + new task only, never writes tokens or sync state', async (
   const { P, calls, disk } = harness({ isDesktopApp: false, isMobile: true }, 'phone');
   disk.data = base();
   const p = new P(); await p.onload();
-  assert.ok(calls.includes('cmd:new-task') && calls.includes('ribbon') && calls.includes('block:task-today') && calls.includes('uri:taskline'));
+  assert.ok(calls.includes('cmd:new-task') && calls.includes('ribbon') && calls.includes('block:task-today') && calls.includes('uri:recurra'));
   assert.ok(!calls.includes('cmd:sync-now') && !calls.includes('status'));
   disk.data.state.map.b = 2; // the sync device wrote newer state meanwhile
   p.settings.defaultReminder = '10m'; p.settings.googleClientId = 'STALE';
@@ -80,5 +80,13 @@ test('device id moves from window.localStorage into the vault-specific store', a
   p.app.saveLocalStorage = (k, v) => { store[k] = v; };
   await p.onload();
   assert.equal(p.isSyncDevice(), true); // legacy id "mac" was carried over
-  assert.equal(store['taskline-device-id'], 'mac');
+  assert.equal(store['recurra-device-id'], 'mac');
+});
+
+test('saved forwarding page from before the rename is moved to the new address', async () => {
+  const { P, disk } = harness({ isDesktopApp: true, isMobile: false }, 'mac');
+  disk.data = base();
+  disk.data.settings.linkBase = 'https://amin-tehrani.github.io/obsidian-taskline/open/';
+  const p = new P(); await p.onload();
+  assert.equal(p.settings.linkBase, 'https://amin-tehrani.github.io/obsidian-recurra/open/');
 });
